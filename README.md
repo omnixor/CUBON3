@@ -124,3 +124,52 @@ The backend will be available at:
 - **API:** http://127.0.0.1:8000
 - **Interactive API documentation:** http://127.0.0.1:8000/docs
 - **Health check:** http://127.0.0.1:8000/api/health
+
+  ## Project Structure
+
+```text
+CUBON3/
+│
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   └── aholo_service.py
+│   │
+│   └── generated/
+│       └── .gitkeep
+│
+├── docs/
+│
+├── .env.example
+├── .gitignore
+├── README.md
+└── LICENSE
+```
+
+### Backend Modules
+
+- `main.py` – FastAPI application and API endpoints.
+- `services/aholo_service.py` – AHolo Lux3D integration, task management and GLB retrieval.
+- `requirements.txt` – Python dependencies.
+- `generated/` – Local storage for generated 3D models.
+
+- ## Medical Disclaimer
+
+CUBON3 is an experimental development project intended for research, learning, and visualization purposes.
+
+The generated 3D models are not clinically validated and must not be used for medical diagnosis, treatment planning, or clinical decision-making.
+
+Accurate medical reconstruction requires appropriate volumetric imaging data, segmentation, geometric validation, and clinical review.
+
+## Team
+
+- **Jeevan Geo Vadakken**
+- **Sujay**
+- **Niharika K Thilak**
+
+## License
+
+This project is distributed under the license included in this repository.
