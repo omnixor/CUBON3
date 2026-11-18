@@ -1,9 +1,9 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-import Sidebar from "./components/Sidebar";
-import Topbar from "./components/Topbar";
-import Dashboard from "./pages/Dashboard";
+import Sidebar from "./components/sidebar";
+import Topbar from "./components/topbar";
+import Dashboard from "./pages/dashboard";
 
 import {
   NewScan,
@@ -11,7 +11,7 @@ import {
   Analysis,
   Projects,
   SettingsPage
-} from "./pages/WorkspacePages";
+} from "./pages/workspacePages";
 
 function App() {
   return (
