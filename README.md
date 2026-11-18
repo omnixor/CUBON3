@@ -93,6 +93,32 @@ From the repository root, run:
 python -m uvicorn main:app --reload --app-dir backend
 ```
 
+## API Reference
+
+Base URL: `http://127.0.0.1:8000`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Backend welcome message |
+| GET | `/api/health` | Check backend health and API key configuration |
+| POST | `/api/aholo/generate` | Upload an image and submit a 3D generation task |
+| GET | `/api/aholo/task/{task_id}` | Retrieve generation task status |
+| POST | `/api/aholo/task/{task_id}/download` | Download the generated GLB model |
+| GET | `/models/{filename}` | Access a generated 3D model |
+
+### Image Generation
+
+The generation endpoint accepts a `multipart/form-data` request.
+
+Required field:
+- `file`: Image file to be processed.
+
+### Model Output
+
+Generated 3D models are stored in GLB format in the backend's `generated/` directory.
+
+The models can be accessed through the `/models/` route when static file serving is configured.
+
 The backend will be available at:
 
 - **API:** http://127.0.0.1:8000
