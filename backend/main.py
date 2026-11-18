@@ -1,18 +1,19 @@
 
 import os
-
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
 import shutil
 import tempfile
+
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
 from services.aholo_service import (
     create_3d_task,
     get_3d_task,
+    download_generated_model,
 )
 
 load_dotenv()
@@ -22,6 +23,18 @@ app = FastAPI(
     description="AI-powered medical imaging backend",
     version="1.0.0",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 GENERATED_DIR = Path(__file__).resolve().parent / "generated"
 
 app.mount(
@@ -29,6 +42,7 @@ app.mount(
     StaticFiles(directory=GENERATED_DIR),
     name="models",
 )
+
 
 @app.get("/")
 def home():
@@ -44,7 +58,6 @@ def health():
         "status": "healthy",
         "aholo_key_configured": bool(os.getenv("AHOLO_API_KEY")),
     }
-
 
 
 @app.post("/api/aholo/generate")
@@ -65,6 +78,7 @@ async def generate_3d(file: UploadFile = File(...)):
 
     except Exception as error:
         print("Generation error:", repr(error))
+
         raise HTTPException(
             status_code=500,
             detail="3D generation request failed",
@@ -77,7 +91,6 @@ async def generate_3d(file: UploadFile = File(...)):
         await file.close()
 
 
-
 @app.get("/api/aholo/task/{task_id}")
 def check_3d_task(task_id: int):
     try:
@@ -85,15 +98,12 @@ def check_3d_task(task_id: int):
 
     except Exception as error:
         print("Task retrieval error:", repr(error))
+
         raise HTTPException(
             status_code=500,
             detail="Task status retrieval failed",
         )
-from services.aholo_service import (
-    create_3d_task,
-    get_3d_task,
-    download_generated_model,
-)
+
 
 @app.post("/api/aholo/task/{task_id}/download")
 def download_3d_model(task_id: int):
@@ -102,6 +112,7 @@ def download_3d_model(task_id: int):
 
     except Exception as error:
         print("Download error:", repr(error))
+
         raise HTTPException(
             status_code=500,
             detail="3D model download failed",
