@@ -74,6 +74,8 @@ function Sidebar() {
               to={item.path}
               key={item.name}
               end={item.path === "/"}
+              aria-label={item.name}
+              title={item.name}
               className={({ isActive }) =>
                 `nav-item ${isActive ? "active" : ""}`
               }
@@ -89,6 +91,8 @@ function Sidebar() {
 
         <NavLink
           to="/settings"
+          aria-label="Settings"
+          title="Settings"
           className={({ isActive }) =>
             `nav-item ${isActive ? "active" : ""}`
           }

@@ -1,6 +1,5 @@
 
 import {
-  ArrowUpRight,
   UploadCloud,
   Box,
   Activity,
@@ -8,14 +7,28 @@ import {
   Plus,
   Clock3
 } from "lucide-react";
-
-const stats = [
-  { label: "Total Projects", value: "0", icon: FolderOpen },
-  { label: "3D Reconstructions", value: "0", icon: Box },
-  { label: "Processing", value: "0", icon: Activity },
-];
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getProjects } from "../services/api";
 
 function Dashboard() {
+  const navigate = useNavigate();
+  const [projects, setProjects] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    getProjects()
+      .then((data) => active && setProjects(data.projects))
+      .catch(() => active && setProjects([]));
+    return () => { active = false; };
+  }, []);
+
+  const stats = [
+    { label: "Total Projects", value: String(projects.length), icon: FolderOpen },
+    { label: "3D Reconstructions", value: String(projects.filter((item) => item.glb_file).length), icon: Box },
+    { label: "Processing", value: String(projects.filter((item) => ["submitted", "processing"].includes(item.status)).length), icon: Activity },
+  ];
+
   return (
     <div className="dashboard">
 
@@ -28,7 +41,7 @@ function Dashboard() {
           </p>
         </div>
 
-        <button className="primary-button">
+        <button className="primary-button" onClick={() => navigate("/new-scan")}>
           <Plus size={18} />
           New Reconstruction
         </button>
@@ -77,7 +90,7 @@ function Dashboard() {
               for AI-powered 3D generation.
             </p>
 
-            <button className="primary-button">
+            <button className="primary-button" onClick={() => navigate("/new-scan")}>
               <Plus size={17} />
               Upload Scan
             </button>
@@ -97,18 +110,26 @@ function Dashboard() {
             <Clock3 size={21} />
           </div>
 
-          <div className="empty-state">
-            <div className="empty-icon">
-              <FolderOpen size={27} />
+          {projects.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon"><FolderOpen size={27} /></div>
+              <h3>No projects yet</h3>
+              <p>Your reconstruction projects will appear here once you create them.</p>
             </div>
-
-            <h3>No projects yet</h3>
-
-            <p>
-              Your reconstruction projects will
-              appear here once you create them.
-            </p>
-          </div>
+          ) : (
+            <div className="activity-list">
+              {projects.slice(0, 5).map((project) => (
+                <button
+                  className="activity-row"
+                  key={project.provider_task_id}
+                  onClick={() => navigate(`/viewer?task=${project.provider_task_id}`)}
+                >
+                  <span>{project.name}</span>
+                  <b className={`status-badge ${project.status}`}>{project.status}</b>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
       </div>
