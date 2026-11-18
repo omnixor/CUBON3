@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-dotenv
+requests
+python-multipart
+manycore-aholo-sdk-asset==1.4.0
+manycore-aholo-sdk-core==1.4.0
+manycore-aholo-sdk-lux3d==1.10.0
