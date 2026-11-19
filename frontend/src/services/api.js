@@ -42,6 +42,16 @@ export function generate3D(file) {
   });
 }
 
+export function generateAIReport(file) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('consent', 'true');
+  return request('/api/analysis/report', {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export function getTask(taskId) {
   return request(`/api/aholo/task/${taskId}`);
 }

@@ -1,53 +1,28 @@
 
-import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 
 import {
   LayoutDashboard,
   ScanLine,
-  Box,
-  Ruler,
   FolderOpen,
+  FileText,
+  Apple,
+  BookOpen,
   Settings,
   Bone
 } from "lucide-react";
 
-import { checkBackendHealth } from "../services/api";
-
 const navigation = [
   { name: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { name: "New Scan", icon: ScanLine, path: "/new-scan" },
-  { name: "3D Viewer", icon: Box, path: "/viewer" },
-  { name: "Analysis", icon: Ruler, path: "/analysis" },
+  { name: "Scan Workspace", icon: ScanLine, path: "/new-scan" },
+  { name: "3D Model Summary", icon: FileText, path: "/analysis" },
+  { name: "Nutrition", icon: Apple, path: "/nutrition" },
+  { name: "Bone Academy", icon: BookOpen, path: "/academy" },
   { name: "Projects", icon: FolderOpen, path: "/projects" },
 ];
 
 function Sidebar() {
-  const [backendStatus, setBackendStatus] = useState("connecting");
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkConnection = async () => {
-      try {
-        await checkBackendHealth();
-
-        if (isMounted) {
-          setBackendStatus("connected");
-        }
-      } catch (error) {
-        if (isMounted) {
-          setBackendStatus("disconnected");
-        }
-      }
-    };
-
-    checkConnection();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const { pathname } = useLocation();
 
   return (
     <aside className="sidebar">
@@ -76,8 +51,13 @@ function Sidebar() {
               end={item.path === "/"}
               aria-label={item.name}
               title={item.name}
-              className={({ isActive }) =>
-                `nav-item ${isActive ? "active" : ""}`
+              className={() =>
+                `nav-item ${
+                  pathname === item.path ||
+                  (item.path === "/new-scan" && pathname === "/viewer")
+                    ? "active"
+                    : ""
+                }`
               }
             >
               <Icon size={19} />
@@ -100,14 +80,6 @@ function Sidebar() {
           <Settings size={19} />
           <span>Settings</span>
         </NavLink>
-
-        <div className="sidebar-footer">
-          <span className={`status-dot ${backendStatus}`}></span>
-
-          {backendStatus === "connecting" && "Connecting to backend..."}
-          {backendStatus === "connected" && "Backend connected"}
-          {backendStatus === "disconnected" && "Backend disconnected"}
-        </div>
 
       </div>
 

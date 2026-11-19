@@ -3,13 +3,14 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { Canvas, useLoader } from "@react-three/fiber";
 import { Bounds, OrbitControls, Environment } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   deleteProject,
   deleteDicomJob,
   downloadModel,
   downloadDicomBundle,
   generate3D,
+  generateAIReport,
   getProjects,
   getTask,
   getDicomJob,
@@ -21,7 +22,7 @@ import {
   checkBackendHealth,
 } from "../services/api";
 
-function PageLayout({ title, description, icon, children }) {
+export function PageLayout({ title, description, icon, children }) {
   return (
     <section className="workspace-page">
       <div className="workspace-page-heading">
@@ -166,8 +167,8 @@ export function NewScan() {
 
   return (
     <PageLayout
-      title="Create 3D with Aholo"
-      description="Upload an image or convert DICOM images to lossless PNG before Aholo generation."
+      title="Scan Workspace"
+      description="Import a scan, prepare its images, and follow it through 3D exploration and scan insights."
       icon="📤"
     >
       <div className="mode-tabs">
@@ -359,8 +360,8 @@ export function Viewer() {
 
   return (
     <PageLayout
-      title="3D Viewer"
-      description="View and interact with generated 3D models."
+      title="Explore 3D"
+      description="Track generation and inspect or download your interactive model."
       icon="🦴"
     >
       <div className="product-grid viewer-grid">
@@ -384,11 +385,9 @@ export function Viewer() {
           )}
           {project?.glb_file ? (
             <>
-              <div className="model-stage">
-                <Suspense fallback={<div className="model-loading">Loading model...</div>}>
-                  <ModelViewer url={`${API_BASE_URL}/models/${encodeURIComponent(project.glb_file)}`} />
-                </Suspense>
-              </div>
+              <ModelStage>
+                <ModelViewer url={`${API_BASE_URL}/models/${encodeURIComponent(project.glb_file)}`} />
+              </ModelStage>
               <a className="secondary-button" href={`${API_BASE_URL}/models/${encodeURIComponent(project.glb_file)}`} download>
                 Download GLB
               </a>
@@ -408,6 +407,14 @@ export function Viewer() {
               <strong>No task selected</strong>
               <span>Select a reconstruction from the list.</span>
             </div>
+          )}
+          {taskId && (
+            <button
+              className="secondary-button"
+              onClick={() => navigate(`/analysis?task=${encodeURIComponent(taskId)}`)}
+            >
+              Continue to scan insights
+            </button>
           )}
         </div>
       </div>
@@ -469,43 +476,394 @@ function GenerationProgress({ taskId, status }) {
   );
 }
 
-function ModelViewer({ url }) {
-  const gltf = useLoader(GLTFLoader, url);
+function ModelStage({ children, className = "", previewRef }) {
+  const internalRef = useRef(null);
+  const stageRef = previewRef || internalRef;
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState("");
+
+  useEffect(() => {
+    function syncFullscreenState() {
+      setIsFullscreen(document.fullscreenElement === stageRef.current);
+    }
+
+    function exitFullscreenOnEscape(event) {
+      if (event.key !== "Escape" || document.fullscreenElement !== stageRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      document.exitFullscreen().catch((error) => {
+        setFullscreenError(error.message || "Could not exit full-screen mode.");
+      });
+    }
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener("keydown", exitFullscreenOnEscape);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener("keydown", exitFullscreenOnEscape);
+    };
+  }, [stageRef]);
+
+  async function toggleFullscreen() {
+    setFullscreenError("");
+    try {
+      if (document.fullscreenElement === stageRef.current) {
+        await document.exitFullscreen();
+      } else if (stageRef.current?.requestFullscreen) {
+        await stageRef.current.requestFullscreen();
+      } else {
+        throw new Error("Full screen is not supported in this browser.");
+      }
+    } catch (error) {
+      setFullscreenError(error.message || "Could not change full-screen mode.");
+    }
+  }
+
   return (
-    <Canvas camera={{ position: [0, 1, 3], fov: 45 }}>
+    <div ref={stageRef} className={`model-stage ${className}`.trim()}>
+      {children}
+      <button
+        className="model-stage-fullscreen-button"
+        type="button"
+        onClick={toggleFullscreen}
+        aria-label={isFullscreen ? "Exit full screen" : "View model full screen"}
+        aria-pressed={isFullscreen}
+      >
+        {isFullscreen ? "Exit full screen" : "Full screen"}
+      </button>
+      {fullscreenError && (
+        <p className="model-stage-fullscreen-error" role="alert">
+          {fullscreenError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ModelViewer({ url, capture = false, onModelReady }) {
+  return (
+    <Canvas
+      camera={{ position: [0, 1, 3], fov: 45 }}
+      gl={capture ? { preserveDrawingBuffer: true } : undefined}
+    >
+      <color attach="background" args={["#080d18"]} />
       <ambientLight intensity={1.2} />
       <directionalLight position={[5, 5, 5]} intensity={1.5} />
-      <Bounds fit clip observe margin={1.2}>
-        <primitive object={gltf.scene} />
-      </Bounds>
+      <Suspense fallback={null}>
+        <LoadedModel url={url} onModelReady={onModelReady} />
+      </Suspense>
       <OrbitControls makeDefault />
       <Environment preset="studio" />
     </Canvas>
   );
 }
 
+function LoadedModel({ url, onModelReady }) {
+  const gltf = useLoader(GLTFLoader, url);
+
+  useEffect(() => {
+    onModelReady?.(true);
+  }, [gltf, onModelReady]);
+
+  return (
+    <Bounds fit clip observe margin={1.2}>
+      <primitive object={gltf.scene} />
+    </Bounds>
+  );
+}
+
 export function Analysis() {
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const modelPreviewRef = useRef(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(searchParams.get("task") || "");
+  const [consent, setConsent] = useState(false);
+  const [reportText, setReportText] = useState("");
+  const [reportProvider, setReportProvider] = useState("");
+  const [cloudflareConfigured, setCloudflareConfigured] = useState(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelReady, setModelReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const selectedProject = projects.find(
+    (item) => String(item.provider_task_id) === selectedTaskId,
+  );
 
   useEffect(() => {
+    checkBackendHealth()
+      .then((health) => setCloudflareConfigured(Boolean(health.cloudflare_ai_configured)))
+      .catch(() => setCloudflareConfigured(null));
     getProjects()
-      .then((data) => setProjects(data.projects))
-      .catch((loadError) => setError(loadError.message));
+      .then((data) => {
+        const models = data.projects.filter((item) => item.glb_file);
+        setProjects(models);
+        const requestedProject = models.find(
+          (item) => String(item.provider_task_id) === searchParams.get("task"),
+        );
+        setSelectedTaskId(
+          String((requestedProject || models[0])?.provider_task_id || ""),
+        );
+      })
+      .catch((loadError) => setError(loadError.message))
+      .finally(() => setModelsLoading(false));
   }, []);
+
+  async function captureModelPreview() {
+    if (!modelReady) {
+      throw new Error("Wait for the 3D model preview to finish loading.");
+    }
+
+    const canvas = modelPreviewRef.current?.querySelector("canvas");
+    if (!canvas) {
+      throw new Error("The 3D model preview is not available.");
+    }
+
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((image) => {
+        if (image) {
+          resolve(image);
+        } else {
+          reject(new Error("Could not capture the current 3D model view."));
+        }
+      }, "image/png");
+    });
+  }
+
+  async function submitReport(event) {
+    event.preventDefault();
+    if (!selectedProject) {
+      setError("Select a generated 3D model first.");
+      return;
+    }
+    if (!consent) {
+      setError("Confirm that the selected model preview may be sent to Cloudflare Workers AI.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setReportText("");
+    setReportProvider("");
+    try {
+      const preview = await captureModelPreview();
+      const imageFile = new File(
+        [preview],
+        `cubon3-model-${selectedProject.provider_task_id}.png`,
+        { type: "image/png" },
+      );
+      const result = await generateAIReport(imageFile);
+      setReportText(result.report);
+      setReportProvider(`${result.provider} · ${result.model}`);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadReport() {
+    if (!selectedProject || !reportText) {
+      setError("Generate a summary for a selected 3D model before downloading a PDF.");
+      return;
+    }
+
+    try {
+      const { jsPDF } = await import("jspdf");
+      const report = new jsPDF();
+      let y = 20;
+
+      function addText(text, fontSize = 11) {
+        report.setFontSize(fontSize);
+        const lines = report.splitTextToSize(text, 180);
+        const lineHeight = fontSize * 0.45 + 1;
+        if (y + lines.length * lineHeight > 280) {
+          report.addPage();
+          y = 20;
+        }
+        report.text(lines, 14, y);
+        y += lines.length * lineHeight + 5;
+      }
+
+      report.setFontSize(18);
+      report.text("CUBON3 3D Model Summary", 14, y);
+      y += 11;
+      addText(`Generated: ${new Date().toLocaleString()}`, 10);
+      addText(`AI provider: ${reportProvider}`, 10);
+      report.setFont("helvetica", "bold");
+      addText("Selected generated model", 12);
+      report.setFont("helvetica", "normal");
+      addText(`Model: ${selectedProject.name || "Unnamed model"}`);
+      addText(`Task ID: ${selectedProject.provider_task_id}`);
+      addText(`Generation status: ${selectedProject.status}`);
+      if (selectedProject.size_bytes) {
+        addText(`GLB size: ${(selectedProject.size_bytes / (1024 * 1024)).toFixed(2)} MB`);
+      }
+
+      report.setFont("helvetica", "bold");
+      addText("AI summary of the rendered model view", 12);
+      report.setFont("helvetica", "normal");
+      addText(reportText);
+
+      report.setFont("helvetica", "bold");
+      addText("Scope and limitations", 10);
+      report.setFont("helvetica", "normal");
+      addText(
+        "This summary describes one rendered view of the generated 3D asset. It does not inspect the original scan or the full 3D geometry, and it is not medically validated. It must not be used for diagnosis or treatment.",
+        9,
+      );
+      report.save(`cubon3-model-summary-${selectedProject.provider_task_id}.pdf`);
+      setError("");
+    } catch (reportError) {
+      setError(reportError.message || "Could not create the PDF report.");
+    }
+  }
 
   return (
     <PageLayout
-      title="Analysis"
-      description="Review available scan and generation information."
+      title="AI 3D Model Summary"
+      description="Choose one of your generated 3D models, inspect it, and create a visual summary using Cloudflare Workers AI."
       icon="📊"
     >
-      <div className="product-grid analysis-grid">
-        <div className="product-panel metric"><span>Total tasks</span><strong>{projects.length}</strong></div>
-        <div className="product-panel metric"><span>Downloaded models</span><strong>{projects.filter((item) => item.glb_file).length}</strong></div>
-        <div className="product-panel metric"><span>Provider failures</span><strong>{projects.filter((item) => item.status === "failed").length}</strong></div>
-      </div>
+      {modelsLoading ? (
+        <div className="product-panel model-placeholder">
+          <span>Loading generated 3D models...</span>
+        </div>
+      ) : projects.length === 0 ? (
+        <div className="product-panel empty-feature">
+          <h2>No generated 3D models yet</h2>
+          <p>
+            Finish a scan generation and download its GLB model in Explore 3D.
+            It will appear here when it is ready.
+          </p>
+          <button className="secondary-button" type="button" onClick={() => navigate("/projects")}>
+            Browse projects
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="product-panel scan-insight-summary">
+            <label htmlFor="report-task">Select a generated 3D model</label>
+            <select
+              id="report-task"
+              value={selectedTaskId}
+              disabled={busy}
+              onChange={(event) => {
+                setSelectedTaskId(event.target.value);
+                setModelReady(false);
+                setConsent(false);
+                setReportText("");
+                setReportProvider("");
+                setError("");
+              }}
+            >
+              {projects.map((projectItem) => (
+                <option key={projectItem.provider_task_id} value={projectItem.provider_task_id}>
+                  {projectItem.name || "Unnamed model"} · #{projectItem.provider_task_id}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedProject && (
+            <div className="product-grid ai-report-grid">
+            <section className="product-panel model-panel ai-model-panel">
+              <div className="ai-model-heading">
+                <div>
+                  <p className="eyebrow">MODEL PREVIEW</p>
+                  <h2>{selectedProject.name || "Unnamed model"}</h2>
+                  <p>Task #{selectedProject.provider_task_id} · {selectedProject.status}</p>
+                </div>
+                {selectedProject.size_bytes ? (
+                  <span>{(selectedProject.size_bytes / (1024 * 1024)).toFixed(2)} MB GLB</span>
+                ) : null}
+              </div>
+              <ModelStage className="ai-model-stage" previewRef={modelPreviewRef}>
+                <ModelViewer
+                  key={selectedTaskId}
+                  url={`${API_BASE_URL}/models/${encodeURIComponent(selectedProject.glb_file)}`}
+                  capture
+                  onModelReady={setModelReady}
+                />
+              </ModelStage>
+              <p className="ai-model-hint">
+                {modelReady
+                  ? "Rotate the model to the angle you want summarized."
+                  : "Loading the selected 3D model..."}
+              </p>
+            </section>
+
+            <form className="product-panel ai-report-form" onSubmit={submitReport}>
+              <p className="eyebrow">CLOUDFLARE WORKERS AI · FREE ALLOCATION</p>
+              <h2>Generate a model summary</h2>
+              <p>
+                The AI summarizes a screenshot of this 3D preview. The original
+                scan and GLB file are not sent. Cloudflare's free plan includes
+                10,000 Neurons per day, shared across the account.
+              </p>
+              <label className="ai-report-consent">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  disabled={busy || !modelReady}
+                  onChange={(event) => setConsent(event.target.checked)}
+                />
+                <span>
+                  I consent to sending the rendered view of this model to
+                  Cloudflare Workers AI for a non-diagnostic visual summary.
+                </span>
+              </label>
+              {cloudflareConfigured === false && (
+                <p className="ai-report-privacy">
+                  Cloudflare AI is not configured. Set CLOUDFLARE_ACCOUNT_ID and
+                  CLOUDFLARE_API_TOKEN in the backend environment, accept the model
+                  license, and restart the API.
+                </p>
+              )}
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={busy || !modelReady}
+              >
+                {busy ? "Generating summary..." : "Generate model summary"}
+              </button>
+              {reportText && (
+                <button className="secondary-button" type="button" onClick={downloadReport}>
+                  Download PDF summary
+                </button>
+              )}
+              {reportText && (
+                <div className="ai-report-output">
+                  <h3>AI summary</h3>
+                  <p>{reportText}</p>
+                  <p className="ai-report-privacy">
+                    {reportProvider}. This summary describes one rendered view,
+                    not the full 3D model or original scan.
+                  </p>
+                </div>
+              )}
+            </form>
+            </div>
+          )}
+        </>
+      )}
       {error && <div className="alert error">{error}</div>}
+      <div className="product-panel report-limitation">
+        <strong>What this summary can tell you</strong>
+        <p>
+          The AI only sees the current rendered view of the generated 3D asset.
+          It does not inspect the original scan or hidden model surfaces and is
+          not validated for diagnosis or treatment. The rendered view is sent
+          to Cloudflare only after consent; the source GLB stays on the CUBON3
+          backend.
+        </p>
+      </div>
     </PageLayout>
   );
 }
@@ -539,11 +897,33 @@ export function Projects() {
 
   return (
     <PageLayout
-      title="Projects"
-      description="Manage your generated 3D reconstruction projects."
+      title="Projects & Recent Activity"
+      description="Review recent scan activity and manage all generated 3D reconstruction projects."
       icon="📁"
     >
       {error && <div className="alert error">{error}</div>}
+      {projects.length > 0 && (
+        <section className="projects-recent product-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">LATEST UPDATES</p>
+              <h2>Recent activity</h2>
+            </div>
+          </div>
+          <div className="activity-list">
+            {projects.slice(0, 5).map((project) => (
+              <button
+                className="activity-row"
+                key={project.provider_task_id}
+                onClick={() => navigate(`/viewer?task=${project.provider_task_id}`)}
+              >
+                <span>{project.name}</span>
+                <b className={`status-badge ${project.status}`}>{project.status}</b>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="product-panel project-table">
         {projects.length === 0 ? (
           <p className="muted-note">No projects have been created.</p>
@@ -569,7 +949,11 @@ export function SettingsPage() {
   useEffect(() => {
     checkBackendHealth()
       .then(setBackend)
-      .catch(() => setBackend({ status: "unavailable", aholo_key_configured: false }));
+      .catch(() => setBackend({
+        status: "unavailable",
+        aholo_key_configured: false,
+        cloudflare_ai_configured: false,
+      }));
   }, []);
 
   return (
@@ -582,6 +966,7 @@ export function SettingsPage() {
         <div><span>API</span><strong>{API_BASE_URL}</strong></div>
         <div><span>Backend</span><strong>{backend?.status || "Checking..."}</strong></div>
         <div><span>Aholo provider</span><strong>{backend?.aholo_key_configured ? "Configured" : backend?.status === "unavailable" ? "Backend unavailable" : backend ? "Not configured" : "Checking..."}</strong></div>
+        <div><span>Cloudflare AI reports</span><strong>{backend?.cloudflare_ai_configured ? "Configured" : backend?.status === "unavailable" ? "Backend unavailable" : backend ? "Not configured" : "Checking..."}</strong></div>
       </div>
     </PageLayout>
   );

@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile, File, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +33,13 @@ from services.aholo_service import (
     normalize_image_to_png,
 )
 from services.dicom_service import get_job_dir, process_dicom_job
+from services.cloudflare_ai_service import (
+    AIProviderError,
+    AIProviderNotConfigured,
+    MODEL_ID,
+    UnsupportedScanImage,
+    generate_image_report,
+)
 
 load_dotenv()
 
@@ -79,6 +86,57 @@ def health():
     return {
         "status": "healthy",
         "aholo_key_configured": bool(os.getenv("AHOLO_API_KEY")),
+        "cloudflare_ai_configured": bool(
+            os.getenv("CLOUDFLARE_ACCOUNT_ID") and os.getenv("CLOUDFLARE_API_TOKEN")
+        ),
+    }
+
+
+@app.post("/api/analysis/report")
+def create_ai_report(
+    file: UploadFile = File(...),
+    consent: bool = Form(...),
+):
+    if not consent:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Explicit consent is required to send the selected model preview "
+                "to Cloudflare Workers AI."
+            ),
+        )
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(
+            status_code=415,
+            detail="Only JPEG, PNG, and WebP model preview images are supported.",
+        )
+
+    max_size = int(os.getenv("MAX_UPLOAD_MB", "10")) * 1024 * 1024
+    try:
+        image_bytes = file.file.read(max_size + 1)
+        if len(image_bytes) > max_size:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image exceeds the {os.getenv('MAX_UPLOAD_MB', '10')} MB limit.",
+            )
+        report = generate_image_report(image_bytes, file.content_type)
+    except UnsupportedScanImage as error:
+        raise HTTPException(status_code=415, detail=str(error))
+    except AIProviderNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error))
+    except AIProviderError as error:
+        raise HTTPException(status_code=502, detail=str(error))
+    finally:
+        file.file.close()
+
+    return {
+        "report": report,
+        "provider": "Cloudflare Workers AI",
+        "model": MODEL_ID,
+        "disclaimer": (
+            "This is a visual summary of one rendered 3D model view, not the full model "
+            "or original scan, and it is not medical advice."
+        ),
     }
 
 

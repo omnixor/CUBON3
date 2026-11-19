@@ -15,9 +15,16 @@ images and generating interactive 3D models with Aholo Lux3D.
   series.
 - Lets users choose a converted DICOM slice to submit to Aholo.
 - Tracks generation tasks with a status-based progress estimate, lists projects,
-  and displays or downloads GLB models. Aholo does not provide an exact
-  percentage.
+  and displays or downloads GLB models with a full-screen viewer option. Press
+  Escape or use the on-screen control to exit full screen. Aholo does not provide
+  an exact percentage.
 - Packages the original DICOM files and converted data into a downloadable ZIP.
+- Searches USDA FoodData Central for food nutrient data and provides source-linked
+  Bone Academy lessons with short quizzes.
+- Lets users select a generated GLB model, rotate its interactive preview, and
+  view it full screen or create a non-diagnostic visual summary through Cloudflare
+  Workers AI. Only a screenshot of the current preview is sent after consent; the
+  source GLB and original scan are not sent. Summaries can be downloaded as PDFs.
 
 ### Workflow limitations
 
@@ -25,6 +32,20 @@ Aholo's integration in this project accepts a 2D image, not a complete CT
 volume. For DICOM, only the selected slice is submitted; the generated model is
 not a 3D reconstruction of the entire scan. Re-encoding a lossy source as PNG
 cannot restore information already lost in the source.
+
+The AI Model Summary uses Cloudflare's general-purpose Llama Vision model. It
+describes one rendered view of the generated model; it does not inspect the
+original scan, hidden model surfaces, or full mesh geometry. It is not validated
+for radiology and must not be used to diagnose or guide treatment. A screenshot
+of the selected model preview is sent to Cloudflare only after the user gives
+consent. The Bone Academy and nutrition pages are educational and are not
+personalized medical guidance.
+
+Nutrition search uses the USDA FoodData Central demonstration API key, which
+has low rate limits. Search terms are sent to USDA; scan files are not. A
+public production site should use a protected API proxy or a bundled USDA
+public-domain data subset rather than expose a private API key in frontend
+code.
 
 ## Repository layout
 
@@ -37,11 +58,13 @@ CUBON3/
 |   |-- services/
 |   |   |-- __init__.py
 |   |   |-- aholo_service.py
+|   |   |-- cloudflare_ai_service.py
 |   |   |-- ct_pipeline_service.py
 |   |   `-- dicom_service.py
 |   |-- generated/                (local GLB output)
 |   |-- test_database.py
-|   `-- test_dicom_service.py
+|   |-- test_dicom_service.py
+|   `-- test_cloudflare_ai_service.py
 |-- frontend/
 |   |-- src/
 |   |   |-- components/
@@ -92,7 +115,10 @@ python -m pip install -r backend/requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set your own `AHOLO_API_KEY`. Keep `.env` private; it is ignored
+Edit `.env` and set your own `AHOLO_API_KEY`. To enable AI visual summaries,
+also configure `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The Cloudflare
+token must allow Workers AI use. Review and accept the model's license in
+Cloudflare before the first report request. Keep `.env` private; it is ignored
 by Git.
 
 Start the API from the repository root:
@@ -140,6 +166,8 @@ generated models, and DICOM data.
 | Variable | Used by | Default | Description |
 |---|---|---|---|
 | `AHOLO_API_KEY` | Backend | — | Aholo API key; required for generation. |
+| `CLOUDFLARE_ACCOUNT_ID` | Backend | — | Cloudflare account ID for Workers AI reports. |
+| `CLOUDFLARE_API_TOKEN` | Backend | — | Backend-only token with permission to run Workers AI models. |
 | `CORS_ORIGINS` | Backend | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed frontend origins. |
 | `MAX_UPLOAD_MB` | Backend | `10` | Maximum raster image upload size. |
 | `MAX_DICOM_UPLOAD_MB` | Backend | `1024` | Maximum total size of a DICOM upload. |
@@ -149,6 +177,14 @@ generated models, and DICOM data.
 For a hosted setup, deploy the backend separately, set `CORS_ORIGINS` to the
 frontend's exact origin, and set `VITE_API_BASE_URL` to the deployed API URL.
 This repository does not deploy or host the application.
+
+The AI report uses
+[`@cf/meta/llama-3.2-11b-vision-instruct`](https://developers.cloudflare.com/workers-ai/models/llama-3.2-11b-vision-instruct/).
+Cloudflare currently documents a free allocation of 10,000 Neurons per day;
+quotas, model availability, and pricing can change, so check the
+[pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Requests that exceed provider limits are surfaced to the user. This
+general-purpose model is not medically validated.
 
 ## DICOM support and data handling
 
@@ -172,7 +208,8 @@ controls, and privacy/compliance review.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/` | Backend status. |
-| `GET` | `/api/health` | Health and Aholo-key configuration check. |
+| `GET` | `/api/health` | Health and provider-configuration check. |
+| `POST` | `/api/analysis/report` | Generate a non-diagnostic model-preview summary after explicit consent. |
 | `POST` | `/api/aholo/generate` | Normalize and submit a raster image. |
 | `GET` | `/api/aholo/task/{task_id}` | Retrieve a generation task's status. |
 | `POST` | `/api/aholo/task/{task_id}/download` | Download a generated GLB. |
